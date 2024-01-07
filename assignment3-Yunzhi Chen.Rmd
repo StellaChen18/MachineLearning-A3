@@ -1,0 +1,304 @@
+---
+title: "ETC3250/5250 IML Asignment 3"
+author: Yunzhi Chen (32051018)
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: show
+---
+
+
+```{r, message = FALSE, warning =  FALSE, echo = -1}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+# Load the packages that you will use to complete this assignment.
+library(tidyverse)
+library(ggdendro)
+library(patchwork)
+library(rsample)
+library(kknn)
+library(ranger)
+library(yardstick)
+```
+
+## Preliminary analysis
+
+### Question 1
+The letter in my data is A.
+
+### Question 2
+
+```{r}
+images <- read_csv(here::here("data32051018.csv"))
+
+imagedata_to_plotdata <- function(data = images, 
+                                  w = 28, 
+                                  h = 28, 
+                                  which = sample(1:784, 12)){
+  data %>% 
+  mutate(id = 1:n()) %>% 
+  filter(id %in% which) %>% 
+  pivot_longer(starts_with("V")) %>% 
+  mutate(col = rep(rep(1:w, each = h), n_distinct(id)),
+         row = rep(rep(1:h, times = w), n_distinct(id)))
+  
+}
+
+letters <- imagedata_to_plotdata(images) %>%
+  ggplot(aes(col, row)) +
+  geom_tile(aes(fill = value)) + 
+  facet_wrap(~ id, nrow = 3) +
+  scale_y_reverse() +
+  theme_void(base_size = 18) +
+  guides(fill = "none") +
+  coord_equal()
+
+letters
+```
+
+### Question 3
+
+```{r}
+images_pca <- prcomp(images,
+                     rank. = 5)
+summary(images_pca)
+```
+
+The summary shows that the first 5 principal components explain 39.22% of the variation in the data.
+
+### Question 4
+
+```{r}
+sample_ids <- sample(1:784, 12)
+
+pc_decompose <- function(k) {
+    Xnew <- images_pca$x[, k, drop = FALSE] %*% t(images_pca$rotation[, k, drop = FALSE])
+  rawdata <- imagedata_to_plotdata(which = sample_ids) 
+  as.data.frame(Xnew) %>% 
+    imagedata_to_plotdata(which = sample_ids)
+}
+
+letters %+% pc_decompose(1) + labs(title = "PC1 loading")
+letters %+% pc_decompose(2) + labs(title = "PC2 loading")
+
+```
+
+### Question 5
+
+```{r}
+haverage <- hclust(dist(images_pca$x), method = "average")
+
+ggdendrogram(haverage, rotate = TRUE) + labs(title = "Average Linkage")
+```
+
+### Question 6
+
+```{r}
+caverage <- cutree(haverage, k = 4)
+caverage
+
+table(caverage) 
+```
+
+
+### Question 7
+
+```{r}
+view_cluster <- function(k) {
+  cluster <- images %>% 
+    mutate(group = caverage) %>% 
+    filter(group == k) %>% 
+    imagedata_to_plotdata(which = 1:10)
+  
+  letters %+% cluster
+}
+
+cluster1 <- view_cluster(1) + labs(title = "Cluster 1") +
+  facet_wrap(~ id, nrow = 1)
+cluster2 <-view_cluster(2) + labs(title = "Cluster 2") +
+  facet_wrap(~ id, nrow = 1)
+cluster3 <-view_cluster(3) + labs(title = "Cluster 3") +
+  facet_wrap(~ id, nrow = 1)
+cluster4 <-view_cluster(4) + labs(title = "Cluster 4") +
+  facet_wrap(~ id, nrow = 1)
+
+cluster1/cluster2/cluster3/cluster4
+
+```
+
+- Cluster 1 is a mix of Uppercase "A" and lowercase "a".
+
+- Cluster 2 is mainly the lowercase Roman letter "a" and each letter has almost a similar shape!
+
+- Cluster 3 seems basically consist of lower case of "a" of Roman alphabet but different written form from cluster2.
+
+- Cluster 4 is mostly capital "A" except three.
+
+## Report
+
+### Group dividing
+```{r, class.source = 'fold-hide'}
+set.seed(32051018)
+```
+
+```{r, class.source = 'fold-hide'}
+# All R code in the report section should include `class.source = 'fold-hide'` in the chunk like this one
+kout <- kmeans(images_pca$x, centers = 5)
+
+# Assign each image to a cluster
+images_clustered <- images %>%
+  mutate(cluster = as.factor(kout$cluster))
+
+# Visualize the clusters
+ggplot(images_clustered, aes(x = images_pca$x[,1], y = images_pca$x[,2], color = cluster)) +
+  geom_point() +
+  labs(title = "Clusters based on PC1 and PC2")
+```
+
+By using k-means method to come up with a sensible set of groups based on the principal components of the main data. And mutate a new column to indicate each image to which cluster it belongs.
+
+As we can see from the clusters plot, the images are separated into distinct clusters, is basically symmetric with x=0, indicating that there are patterns in the data that distinguish the images from one another. The separation of the clusters in the plot suggests that the first two principal components are able to capture a significant amount of the variability in the data, enabling the clustering algorithm to group similar images together.
+
+```{r, class.source = 'fold-hide'}
+view_cluster_kmeans <- function(k) {
+  cluster <- images_clustered %>% 
+    filter(cluster == k) %>% 
+    imagedata_to_plotdata(which = 1:15)
+  
+ letters %+% cluster
+}
+
+cluster5 <- view_cluster_kmeans(1) + labs(title = "Cluster 1") +
+  facet_wrap(~ id, nrow = 1)
+cluster6 <- view_cluster_kmeans(2) + labs(title = "Cluster 2") +
+  facet_wrap(~ id, nrow = 1)
+cluster7 <- view_cluster_kmeans(3) + labs(title = "Cluster 3") +
+  facet_wrap(~ id, nrow = 1)
+cluster8 <- view_cluster_kmeans(4) + labs(title = "Cluster 4") +
+  facet_wrap(~ id, nrow = 1)
+cluster9 <- view_cluster_kmeans(5) + labs(title = "Cluster 5") +
+  facet_wrap(~ id, nrow = 1)
+
+cluster5/cluster6/cluster7/cluster8/cluster9
+
+```
+
+The view of each 5 clusters indicates that cluster 1 is composed of the capital Roman letter "A", possessing a sharp stroke and a slant to the right.
+
+The second cluster is mostly occupied by the lowercase form of "a", and the shape of the lowercase is flattest compared with other clusters. And the small number of capital "A" that appear in this cluster have thinner strokes.
+
+Cluster 4 consists of a mixture of upper and lower case letters, and the letters are scribbled in a free form.
+
+Clusters 3 and 5 are mainly composed of the lowercase form of "a", but contain different forms of it, a flatter shape in cluster 5. The basic writing style of cluster 3 is that the last stroke faces to the right, and some of the whole letters are tilted to the right. In total, it seems that the strokes of all letters are thinner for the last cluster.
+
+### Supervised learning
+
+As for the supervised learning with principal components as predictors to classify these 5 observations, I choose the kNN method and random forest method to manipulate.
+
+First, I split the original dataset into training and testing sets with principal components as predictors.
+```{r, class.source = 'fold-hide'}
+images_train <- as_tibble(images_pca$x) %>% mutate(cluster = as.factor(kout$cluster))
+newdata <- read_csv(here::here("newrecords32051018.csv"))
+test_pca <- prcomp(newdata)
+images_test <- as_tibble(test_pca$x)
+```
+
+Next, using the kNN method to predict the 5 observations and produce the predict cluster of each observation:
+```{r, class.source = 'fold-hide'}
+knn_pred <- kknn(cluster ~ ., 
+                 train = images_train,
+                 test = images_test,
+                 k = 2,
+                 distance = 2)
+
+prediction1 <- newdata %>%
+  mutate(pred_cluster = knn_pred$fitted.values)
+
+as_tibble(prediction1 %>% select(pred_cluster))
+
+imagedata_to_plotdata_new <- function(data = newdata, 
+                                      w = 28, 
+                                      h = 28, 
+                                      which = sample(1:5, 5)){
+  
+  data %>% 
+  mutate(id = 1:n()) %>% 
+  filter(id %in% which) %>% 
+  pivot_longer(starts_with("V")) %>% 
+  mutate(col = rep(rep(1:w, each = h), n_distinct(id)),
+         row = rep(rep(1:h, times = w), n_distinct(id)))
+  
+}
+
+letters_new <- imagedata_to_plotdata_new(newdata) %>%
+  ggplot(aes(col, row)) +
+  geom_tile(aes(fill = value)) + 
+  facet_wrap(~ id, nrow = 3) +
+  scale_y_reverse() +
+  theme_void(base_size = 18) +
+  guides(fill = "none") +
+  coord_equal()
+
+view_cluster_knnpred <- function(k) {
+  cluster <- prediction1 %>%
+    filter(pred_cluster == k) %>%
+    imagedata_to_plotdata_new(which = 1:5)
+  
+ letters_new %+% cluster
+}
+
+
+cluster10 <- view_cluster_knnpred(1) + labs(title = "Cluster 2") +
+  facet_wrap(~ id, nrow = 1)
+cluster11 <- view_cluster_knnpred(2) + labs(title = "Cluster 4") +
+  facet_wrap(~ id, nrow = 1)
+cluster12 <- view_cluster_knnpred(3) + labs(title = "Cluster 1") +
+  facet_wrap(~ id, nrow = 1)
+cluster13 <- view_cluster_knnpred(4) + labs(title = "Cluster 5") +
+  facet_wrap(~ id, nrow = 1)
+cluster14 <- view_cluster_knnpred(5) + labs(title = "Cluster 3") +
+  facet_wrap(~ id, nrow = 1)
+cluster10/cluster11/cluster12/cluster13/cluster14
+```
+
+As we can see from the table, the predicted cluster of the 5 observations is 2, 4, 1, 5, and 3 respectively. After a view_cluster function, we can plot the specific images of each observation.
+
+We then fit a random forest model to the pca data and create the new column of the predicted cluster, plot by using the same view_cluster function:
+```{r, class.source = 'fold-hide'}
+model_rf <- ranger(cluster ~ ., 
+                   data = images_train,
+                   mtry = floor((ncol(images_train) - 1) / 3),
+                   importance = "impurity",
+                   num.trees = 500,
+                   classification = TRUE)
+
+rf_pred <- images_test %>% predict(model_rf, .)
+
+prediction2 <- newdata %>%
+  mutate(pred_cluster = rf_pred$predictions)
+
+as_tibble(prediction2 %>% select(pred_cluster))
+
+view_cluster_rfpred <- function(k) {
+  cluster <- prediction2 %>%
+    filter(pred_cluster == k) %>%
+    imagedata_to_plotdata_new(which = 1:5)
+  
+ letters_new %+% cluster
+}
+
+cluster15 <- view_cluster_rfpred(1) + labs(title = "Cluster 2") +
+  facet_wrap(~ id, nrow = 1)
+cluster16 <- view_cluster_rfpred(2) + labs(title = "Cluster 4") +
+  facet_wrap(~ id, nrow = 1)
+cluster17 <- view_cluster_rfpred(3) + labs(title = "Cluster 1") +
+  facet_wrap(~ id, nrow = 1)
+cluster18 <- view_cluster_rfpred(4) + labs(title = "Cluster 5") +
+  facet_wrap(~ id, nrow = 1)
+cluster19 <- view_cluster_rfpred(5) + labs(title = "Cluster 3") +
+  facet_wrap(~ id, nrow = 1)
+
+cluster15/cluster16/cluster17/cluster18/cluster19
+
+```
+
+From the table of predict cluster and the plot, both indicate that the two method lead to the same conclusion. And I will prefer the kNN method to be the best optimal one as k-NN can be applied to various types of data, including numerical and categorical variables. It can handle mixed data types without requiring extensive preprocessing.
